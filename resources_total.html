@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>调度系统资源水位图</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f8fafc;
+            color: #1e293b;
+        }
+        
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+        }
+        
+        .resource-tab {
+            transition: all 0.3s ease;
+        }
+        
+        .resource-tab.active {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
+        }
+        
+        .nav-btn {
+            transition: all 0.2s ease;
+        }
+        
+        .nav-btn:hover {
+            background: rgba(59, 130, 246, 0.15);
+            transform: scale(1.05);
+        }
+        
+        .date-display {
+            background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
+            border-left: 4px solid #3b82f6;
+        }
+    </style>
+</head>
+<body class="min-h-screen p-6">
+    <div class="max-w-7xl mx-auto space-y-6">
+        
+        <!-- 顶部日期和资源类型选择器 -->
+        <div class="glass-panel rounded-2xl p-6">
+            <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                
+                <!-- 日期显示 -->
+                <div class="date-display px-6 py-3 rounded-xl flex items-center gap-3">
+                    <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 0 002-2V7a2 0 00-2-2H5a2 0 00-2 2v12a2 0 002 2z"></path>
+                    </svg>
+                    <span id="currentDate" class="text-2xl font-bold text-slate-800 tracking-wide">2026-03-30</span>
+                </div>
+                
+                <!-- 资源类型切换 -->
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-slate-600 text-sm mr-2">资源类型:</span>
+                    <div class="flex gap-2 bg-slate-100 p-1.5 rounded-xl">
+                        <button onclick="switchResource('GPU')" id="tab-GPU" class="resource-tab active px-5 py-2 rounded-lg text-sm font-medium text-white">
+                            GPU
+                        </button>
+                        <button onclick="switchResource('CPU')" id="tab-CPU" class="resource-tab px-5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-800">
+                            CPU
+                        </button>
+                        <button onclick="switchResource('显存')" id="tab-显存" class="resource-tab px-5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-800">
+                            显存
+                        </button>
+                        <button onclick="switchResource('内存')" id="tab-内存" class="resource-tab px-5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-800">
+                            内存
+                        </button>
+                        <button onclick="switchResource('vGPU')" id="tab-vGPU" class="resource-tab px-5 py-2 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-800">
+                            vGPU
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 图表主区域 -->
+        <div class="glass-panel rounded-2xl p-6 relative">
+            <div id="chartContainer" class="w-full h-[500px]"></div>
+            
+            <!-- 滑动控制 -->
+            <div class="flex justify-between items-center mt-6 pt-6 border-t border-slate-200">
+                <button onclick="changeDate(-1)" class="nav-btn flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 hover:text-blue-600 font-medium">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width:2 d="M15 19l-7-7 7-7"></path>
+                    </svg>
+                    前一天
+                </button>
+                
+                <button onclick="changeDate(1)" class="nav-btn flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 hover:text-blue-600 font-medium">
+                    后一天
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width:2 d="M9 5l7 7-7 7"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        
+        <!-- 统计概览 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="glass-panel rounded-xl p-5 border-l-4 border-blue-500">
+                <div class="text-slate-600 text-sm mb-1">物理总量峰值</div>
+                <div class="text-2xl font-bold text-slate-800" id="statPhysical">10240 GiB</div>
+            </div>
+            <div class="glass-panel rounded-xl p-5 border-l-4 border-amber-500">
+                <div class="text-slate-600 text-sm mb-1">逻辑总量峰值</div>
+                <div class="text-2xl font-bold text-slate-800" id="statLogical">12800 GiB <span class="text-sm text-amber-500">(125%)</span></div>
+            </div>
+            <div class="glass-panel rounded-xl p-5 border-l-4 border-emerald-500">
+                <div class="text-slate-600 text-sm mb-1">空闲率最低</div>
+                <div class="text-2xl font-bold text-slate-800" id="statIdle">15.2%</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 当前状态
+        let currentResource = 'GPU';
+        let currentDate = new Date('2026-03-30');
+        let chart;
+        
+        // 资源单位映射
+        const unitMap = {
+            'GPU': '卡',
+            'CPU': '核',
+            '显存': 'GiB',
+            '内存': 'GiB',
+            'vGPU': '个'
+        };
+        
+        // 生成24小时数据
+        function generateData(resourceType, date) {
+            const hours = [];
+            const physical = [];
+            const logical = [];
+            const idle = [];
+            
+            // 物理总量基准值（固定不变）
+            const baseValue = resourceType === 'GPU' ? 8192 : 
+                             resourceType === 'CPU' ? 640 : 
+                             resourceType === '显存' ? 16384 : 
+                             resourceType === '内存' ? 512 : 128;
+            
+            // 基于日期种子生成确定性随机
+            const seed = date.getDate() + date.getMonth() * 31;
+            const dateStr = date.toISOString().split('T')[0];
+            
+            for (let i = 0; i <= 24; i++) {
+                // X轴0点显示完整年月日
+                const hour = i === 0 ? `${dateStr} 00:00` : 
+                             i === 24 ? `${dateStr} 00:00` : 
+                             `${String(i).padStart(2, '0')}:00`;
+                hours.push(hour);
+                
+                // 物理总量 = 固定值（硬件不变）
+                const phys = baseValue;
+                
+                // 模拟业务高峰低谷（仅影响逻辑量）
+                const hourNum = i === 24 ? 0 : i;
+                const businessFactor = (hourNum >= 9 && hourNum <= 18) ? 0.8 : 
+                                      (hourNum >= 19 && hourNum <= 23) ? 0.9 : 0.4;
+                
+                const randomFactor = Math.sin(seed + i) * 0.1 + 1;
+                
+                // 逻辑量可能超分 (100% - 150%)
+                const overCommit = resourceType === 'GPU' || resourceType === 'vGPU' || resourceType === '显存';
+                const logicRatio = overCommit ? (1 + Math.random() * 0.5) : 1;
+                const logi = Math.floor(phys * logicRatio * businessFactor * randomFactor);
+                
+                // 空闲量 = 物理总量 - 已使用量
+                const used = Math.floor(logi * (0.6 + Math.random() * 0.3));
+                const idl = Math.max(0, phys - used);
+                
+                physical.push(phys);
+                logical.push(logi);
+                idle.push(idl);
+            }
+            
+            return { hours, physical, logical, idle };
+        }
+        
+        // 初始化图表
+        function initChart() {
+            const dom = document.getElementById('chartContainer');
+            chart = echarts.init(dom);
+            updateChart();
+            window.addEventListener('resize', () => chart.resize());
+        }
+        
+        // 更新图表
+        function updateChart() {
+            if(!chart) return;
+            const data = generateData(currentResource, currentDate);
+            const unit = unitMap[currentResource];
+            
+            const option = {
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: {
+                        type: 'cross',
+                        crossStyle: { color: '#94a3b8' }
+                    },
+                    // 半透明黑色背景
+                    backgroundColor: 'rgba(23, 23, 23, 0.85)',
+                    borderColor: 'rgba(255,255,255,0.1)',
+                    borderWidth: 1,
+                    textStyle: { color: '#ffffff' },
+                    padding: 12,
+                    formatter: function(params) {
+                        const hour = params[0].axisValue;
+                        const phys = params.find(p => p.seriesName === '物理总量')?.value || 0;
+                        const logi = params.find(p => p.seriesName === '逻辑总量')?.value || 0;
+                        const idl = params.find(p => p.seriesName === '空闲总量')?.value || 0;
+                        
+                        const logicPercent = ((logi / phys) * 100).toFixed(2);
+                        const idlePercent = ((idl / phys) * 100).toFixed(2);
+                        
+                        // 超分警告样式
+                        const logicStyle = parseFloat(logicPercent) > 100 ? 
+                            'color: #f59e0b; font-weight: bold;' : '';
+                        
+                        return `
+                            <div style="padding: 4px;">
+                                <div style="font-size: 16px; font-weight: 600; margin-bottom: 10px; color: #fff;">
+                                    ${hour}
+                                </div>
+                                <div style="margin-bottom: 6px;">
+                                    <span style="color: #9ca3af;">物理总量：</span>
+                                    <span style="color: #3b82f6; font-weight: 500;">${phys} ${unit}</span>
+                                </div>
+                                <div style="margin-bottom: 6px;">
+                                    <span style="color: #9ca3af;">逻辑总量：</span>
+                                    <span style="${logicStyle}">${logi} ${unit} (${logicPercent}%)</span>
+                                    ${parseFloat(logicPercent) > 100 ? '<span style="color: #f59e0b; margin-left: 4px;">⚡超分</span>' : ''}
+                                </div>
+                                <div>
+                                    <span style="color: #9ca3af;">空闲总量：</span>
+                                    <span style="color: #10b981; font-weight: 500;">${idl} ${unit} (${idlePercent}%)</span>
+                                </div>
+                            </div>
+                        `;
+                    }
+                },
+                // 图例放在顶部 + 颜色完全统一
+                legend: {
+                    top: 10,
+                    left: 'center',
+                    textStyle: { color: '#64748b', fontSize:13 },
+                    itemWidth: 12,
+                    itemHeight: 12,
+                    itemGap: 20,
+                    data: [
+                        { name: '物理总量', itemStyle: { color: '#3b82f6' } },
+                        { name: '逻辑总量', itemStyle: { color: '#f59e0b' } },
+                        { name: '空闲总量', itemStyle: { color: '#10b981' } }
+                    ]
+                },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '3%',
+                    top: '12%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    data: data.hours,
+                    axisLine: { lineStyle: { color: '#cbd5e1' } },
+                    axisLabel: { 
+                        color: '#64748b',
+                        fontSize: 12,
+                        rotate: 15
+                    },
+                    axisTick: { show: false }
+                },
+                yAxis: {
+                    type: 'value',
+                    name: `资源水位 (${unit})`,
+                    nameTextStyle: {
+                        color: '#64748b',
+                        padding: [0, 0, 0, 20]
+                    },
+                    axisLine: { show: false },
+                    axisLabel: { color: '#64748b' },
+                    splitLine: { 
+                        lineStyle: { 
+                            color: '#e2e8f0',
+                            type: 'dashed'
+                        }
+                    }
+                },
+                series: [
+                    {
+                        name: '物理总量',
+                        type: 'line',
+                        data: data.physical,
+                        smooth: false,
+                        symbol: 'circle',
+                        symbolSize: 4,
+                        lineStyle: { width: 2, color: '#3b82f6' },
+                        itemStyle: { color: '#3b82f6' },
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(59, 130, 246, 0.15)' },
+                                { offset: 1, color: 'rgba(59, 130, 246, 0.02)' }
+                            ])
+                        },
+                        z: 3
+                    },
+                    {
+                        name: '逻辑总量',
+                        type: 'line',
+                        data: data.logical,
+                        smooth: true,
+                        symbol: 'none',
+                        lineStyle: { width: 2, color: '#f59e0b' },
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(245, 158, 11, 0.3)' },
+                                { offset: 1, color: 'rgba(245, 158, 11, 0.05)' }
+                            ])
+                        },
+                        z: 2
+                    },
+                    {
+                        name: '空闲总量',
+                        type: 'line',
+                        data: data.idle,
+                        smooth: true,
+                        symbol: 'none',
+                        lineStyle: { width: 2, color: '#10b981' },
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(16, 185, 129, 0.25)' },
+                                { offset: 1, color: 'rgba(16, 185, 129, 0.05)' }
+                            ])
+                        },
+                        z: 1
+                    }
+                ]
+            };
+            
+            chart.setOption(option, true);
+            updateStats(data, unit);
+        }
+        
+        // 更新统计数据
+        function updateStats(data, unit) {
+            const maxPhys = Math.max(...data.physical);
+            const maxLogi = Math.max(...data.logical);
+            const minIdle = Math.min(...data.idle);
+            const minIdlePercent = ((minIdle / maxPhys) * 100).toFixed(1);
+            const logicPercent = ((maxLogi / maxPhys) * 100).toFixed(0);
+            
+            document.getElementById('statPhysical').textContent = `${maxPhys} ${unit}`;
+            document.getElementById('statLogical').innerHTML = 
+                `${maxLogi} ${unit} <span class="text-sm ${parseInt(logicPercent) > 100 ? 'text-amber-500' : 'text-amber-500'}">(${logicPercent}%)</span>`;
+            document.getElementById('statIdle').textContent = `${minIdlePercent}%`;
+        }
+        
+        // 切换资源类型
+        function switchResource(type) {
+            currentResource = type;
+            
+            // 更新标签样式
+            document.querySelectorAll('.resource-tab').forEach(tab => {
+                tab.classList.remove('active');
+                tab.classList.add('text-slate-600');
+                tab.classList.remove('text-white');
+            });
+            
+            const activeTab = document.getElementById(`tab-${type}`);
+            activeTab.classList.add('active');
+            activeTab.classList.remove('text-slate-600');
+            activeTab.classList.add('text-white');
+            
+            updateChart();
+        }
+        
+        // 切换日期
+        function changeDate(direction) {
+            currentDate.setDate(currentDate.getDate() + direction);
+            const dateStr = currentDate.toISOString().split('T')[0];
+            document.getElementById('currentDate').textContent = dateStr;
+            updateChart();
+        }
+        
+        // 初始化
+        window.onload = function() {
+            initChart();
+        };
+    </script>
+</body>
+</html>
