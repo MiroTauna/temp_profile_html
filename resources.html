@@ -1,1 +1,323 @@
 
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>调度系统任务水位监控</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #ffffff;
+            color: #1f2937;
+            min-height: 100vh;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .card {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .resource-tab {
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #6b7280;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex; align-items: center; gap: 6px; white-space: nowrap;
+        }
+        .resource-tab:hover { background: #f3f4f6; border-color: #d1d5db; }
+        .resource-tab.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+        
+        .priority-card { border-left:4px solid; padding:16px; background:#fafafa; border-radius:8px; }
+        .priority-vip { border-left-color: #dc2626; }
+        .priority-normal { border-left-color: #f59e0b; }
+        .priority-idle { border-left-color: #10b981; }
+        
+        @media (max-width:768px) {
+            .container { padding:12px; }
+            .resource-tabs { overflow-x:auto; gap:8px; padding-bottom:4px; }
+            .resource-tab { padding:8px 14px; font-size:13px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card p-6 mb-6">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900">调度系统任务水位监控</h1>
+                    <p class="text-gray-500 text-sm mt-1">实时资源分配与任务优先级可视化</p>
+                </div>
+                <div class="flex items-center gap-4 text-sm">
+                    <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-red-600"></span><span>超高优先级</span></div>
+                    <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-amber-500"></span><span>普通优先级</span></div>
+                    <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-emerald-500"></span><span>闲时任务</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card p-4 mb-6">
+            <div class="resource-tabs flex gap-3 overflow-x-auto">
+                <button onclick="switchResource('GPU')" id="tab-GPU" class="resource-tab active"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>GPU (卡)</button>
+                <button onclick="switchResource('CPU')" id="tab-CPU" class="resource-tab"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>CPU (核)</button>
+                <button onclick="switchResource('vGPU')" id="tab-vGPU" class="resource-tab"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>vGPU (虚拟卡)</button>
+                <button onclick="switchResource('VRAM')" id="tab-VRAM" class="resource-tab"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>显存 (GB)</button>
+                <button onclick="switchResource('RAM')" id="tab-RAM" class="resource-tab"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>内存 (GB)</button>
+            </div>
+        </div>
+
+        <div class="card p-6 mb-6 relative">
+            <div id="waterLevelChart" style="width:100%; height:500px;"></div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="priority-card priority-vip">
+                <div class="flex items-center justify-between mb-3"><span class="font-semibold text-red-700">超高优先级</span><span class="text-xs bg-red-100 text-red-700 px-2 py-1 rounded">抢占式</span></div>
+                <div class="space-y-2 text-sm">
+                    <div class="flex justify-between items-center"><span>VIP训练任务</span><span class="w-3 h-3 rounded-full bg-red-600"></span></div>
+                    <div class="flex justify-between items-center"><span>VIP推理任务</span><span class="w-3 h-3 rounded-full bg-orange-600"></span></div>
+                    <div class="flex justify-between items-center"><span>开发机</span><span class="w-3 h-3 rounded-full bg-rose-600"></span></div>
+                </div>
+            </div>
+            <div class="priority-card priority-normal">
+                <div class="flex items-center justify-between mb-3"><span class="font-semibold text-amber-700">普通优先级</span><span class="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded">标准调度</span></div>
+                <div class="space-y-2 text-sm">
+                    <div class="flex justify-between items-center"><span>普通训练任务</span><span class="w-3 h-3 rounded-full bg-amber-500"></span></div>
+                    <div class="flex justify-between items-center"><span>普通推理任务</span><span class="w-3 h-3 rounded-full bg-yellow-500"></span></div>
+                </div>
+            </div>
+            <div class="priority-card priority-idle">
+                <div class="flex items-center justify-between mb-3"><span class="font-semibold text-emerald-700">低优先级/其他</span><span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded">可抢占</span></div>
+                <div class="space-y-2 text-sm">
+                    <div class="flex justify-between items-center"><span>闲时训练任务</span><span class="w-3 h-3 rounded-full bg-emerald-500"></span></div>
+                    <div class="flex justify-between items-center"><span>闲时推理任务</span><span class="w-3 h-3 rounded-full bg-teal-500"></span></div>
+                    <div class="flex justify-between items-center"><span>故障/空闲</span><span class="w-3 h-3 rounded-full bg-gray-500"></span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const resourceUnits = {'GPU':'卡','CPU':'核','vGPU':'虚拟卡','VRAM':'GB','RAM':'GB'};
+        const colors = {vipTrain:'#dc2626',vipInfer:'#ea580c',devMachine:'#e11d48',normalTrain:'#f59e0b',normalInfer:'#eab308',idleTrain:'#10b981',idleInfer:'#14b8a6',fault:'#6b7280',idle:'#9ca3af'};
+
+        function generateData(resourceType) {
+            const hours = 24;
+            const timeLabels = [];
+            const displayLabels = [];
+            const data = {vipTrain:[],vipInfer:[],devMachine:[],normalTrain:[],normalInfer:[],idleTrain:[],idleInfer:[],fault:[],idle:[]};
+            const baseTotal = {'GPU':1000,'CPU':5000,'vGPU':2000,'VRAM':8000,'RAM':16000}[resourceType];
+            const totals = [];
+            const today = new Date();
+            const dateStr = `${today.getFullYear()}-${(today.getMonth()+1).toString().padStart(2,'0')}-${today.getDate().toString().padStart(2,'0')}`;
+
+            for (let i=0; i<hours; i++) {
+                const hourStr = i.toString().padStart(2,'0')+':00';
+                timeLabels.push(`${dateStr} ${hourStr}`);
+                displayLabels.push(i === 0 ? `${dateStr} ${hourStr}` : hourStr);
+                
+                let hourTotal = baseTotal;
+                const hasFault = Math.random()>0.85;
+                const faultAmount = hasFault ? Math.floor(baseTotal*0.05) : 0;
+                hourTotal -= faultAmount;
+                if(Math.random()>0.9) hourTotal += Math.floor(baseTotal*0.1);
+                totals.push(hourTotal);
+                const isPeak = i>=9&&i<=18;
+                const isNight = i>=0&&i<=6;
+
+                // 计算真实数值
+                const vipTrainVal = Math.floor(hourTotal*0.15 + Math.random()*0.05*hourTotal);
+                const vipInferVal = Math.floor(hourTotal*0.10 + Math.random()*0.03*hourTotal);
+                const devVal = Math.floor(hourTotal*0.05 + Math.random()*0.02*hourTotal);
+                let normalTrainVal = isPeak ? Math.floor(hourTotal*0.25+Math.random()*0.05*hourTotal) : Math.floor(hourTotal*0.15+Math.random()*0.05*hourTotal);
+                let normalInferVal = isPeak ? Math.floor(hourTotal*0.15+Math.random()*0.03*hourTotal) : Math.floor(hourTotal*0.10+Math.random()*0.03*hourTotal);
+                let idleTrainVal = isNight ? Math.floor(hourTotal*0.15+Math.random()*0.05*hourTotal) : Math.floor(hourTotal*0.05+Math.random()*0.03*hourTotal);
+                let idleInferVal = isNight ? Math.floor(hourTotal*0.08+Math.random()*0.02*hourTotal) : Math.floor(hourTotal*0.02+Math.random()*0.02*hourTotal);
+                const faultVal = faultAmount;
+                const allocated = vipTrainVal+vipInferVal+devVal+normalTrainVal+normalInferVal+idleTrainVal+idleInferVal+faultVal;
+                const idleVal = Math.max(0, hourTotal-allocated);
+
+                // 存储真实值用于tooltip显示
+                data.vipTrain.push(vipTrainVal);
+                data.vipInfer.push(vipInferVal);
+                data.devMachine.push(devVal);
+                data.normalTrain.push(normalTrainVal);
+                data.normalInfer.push(normalInferVal);
+                data.idleTrain.push(idleTrainVal);
+                data.idleInfer.push(idleInferVal);
+                data.fault.push(faultVal);
+                data.idle.push(idleVal);
+            }
+            return {timeLabels, displayLabels, data, totals, baseTotal};
+        }
+
+        let currentResource = 'GPU';
+        let chartInstance = null;
+
+        function initChart() {
+            const dom = document.getElementById('waterLevelChart');
+            chartInstance = echarts.init(dom);
+            updateChart(currentResource);
+            window.addEventListener('resize', ()=>chartInstance.resize());
+        }
+
+        function updateChart(resourceType) {
+            const {timeLabels, displayLabels, data, totals, baseTotal} = generateData(resourceType);
+            const unit = resourceUnits[resourceType];
+
+            const option = {
+                backgroundColor:'#fff',
+                tooltip:{
+                    trigger:'axis',
+                    axisPointer:{type:'shadow',shadowStyle:{color:'rgba(0,0,0,0.05)'}},
+                    backgroundColor:'rgba(17,24,39,0.85)',
+                    borderColor:'rgba(255,255,255,0.1)',
+                    borderWidth:1, borderRadius:8, padding:[8,10],
+                    textStyle:{color:'#fff',fontSize:12},
+                    extraCssText:'box-shadow:0 4px 12px rgba(0,0,0,0.15); max-width:320px; z-index:99;',
+                    formatter:function(params){
+                        const time = params[0].axisValue;
+                        const idx = params[0].dataIndex;
+                        const total = totals[idx];
+                        let used=0;
+                        const realVals = {
+                            'VIP训练任务': data.vipTrain[idx],
+                            'VIP推理任务': data.vipInfer[idx],
+                            '开发机': data.devMachine[idx],
+                            '普通训练任务': data.normalTrain[idx],
+                            '普通推理任务': data.normalInfer[idx],
+                            '闲时训练任务': data.idleTrain[idx],
+                            '闲时推理任务': data.idleInfer[idx],
+                            '故障': data.fault[idx],
+                            '空闲': data.idle[idx]
+                        };
+                        
+                        // 计算总已分配量
+                        params.forEach(p=>{
+                            if(p.seriesName!='空闲') used+=realVals[p.seriesName];
+                        });
+                        
+                        // 百分比保留两位小数
+                        const pct = v=>((v/total)*100).toFixed(2);
+                        return `<div style="font-family:Inter">
+                            <div style="font-size:13px; font-weight:600; margin-bottom:6px;">${time}</div>
+                            <div style="font-size:12px; opacity:0.8;">总量 ${total.toLocaleString()}${unit} · 已分配 ${used.toLocaleString()}${unit} (${pct(used)}%)</div>
+                            <div style="border-top:1px solid rgba(255,255,255,0.1); margin-top:6px; padding-top:6px;">
+                            ${['VIP训练任务','VIP推理任务','开发机','普通训练任务','普通推理任务','闲时训练任务','闲时推理任务','故障','空闲'].map(n=>{
+                                const v=realVals[n]||0; if(v===0)return'';
+                                const c={'VIP训练任务':'#dc2626','VIP推理任务':'#ea580c','开发机':'#e11d48','普通训练任务':'#f59e0b','普通推理任务':'#eab308','闲时训练任务':'#10b981','闲时推理任务':'#14b8a6','故障':'#6b7280','空闲':'#9ca3af'}[n];
+                                return `<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:12px;">
+                                <div style="display:flex;align-items:center;gap:5px;"><span style="width:5px;height:5px;border-radius:50%;background:${c};"></span>${n}</div>
+                                <span style="font-weight:500;">${v.toLocaleString()}${unit} (${pct(v)}%)</span></div>`;
+                            }).join('')}
+                            </div></div>`;
+                    }
+                },
+                legend:{
+                    data:['VIP训练任务','VIP推理任务','开发机','普通训练任务','普通推理任务','闲时训练任务','闲时推理任务','故障','空闲'],
+                    top:0, textStyle:{color:'#4b5563',fontSize:11}, itemWidth:12, itemHeight:12
+                },
+                grid:{left:'3%',right:'4%',bottom:'3%',top:'15%',containLabel:true},
+                dataZoom: [
+                    { type: 'inside', start: 0, end: 100 },
+                    { 
+                        type: 'slider', 
+                        height: 12,
+                        bottom: 8,
+                        borderColor: '#e5e7eb',
+                        backgroundColor: '#f9fafb',
+                        handleColor: '#2563eb',
+                        showDetail: false
+                    }
+                ],
+                xAxis:{
+                    type:'category', 
+                    data:displayLabels,
+                    axisLine:{lineStyle:{color:'#e5e7eb'}},
+                    axisLabel:{
+                        color:'#6b7280', 
+                        fontSize:11, 
+                        rotate:30,
+                        align: 'right'
+                    },
+                    axisTick:{show:false}
+                },
+                yAxis:{
+                    type:'value', 
+                    name:'任务水位率 (%)', 
+                    nameTextStyle:{color:'#6b7280',fontSize:12},
+                    max:100, 
+                    axisLine:{show:false}, 
+                    axisLabel:{color:'#6b7280',formatter:'{value}%'},
+                    splitLine:{lineStyle:{color:'#f3f4f6'}}
+                },
+                series:[
+                    {name:'VIP训练任务',type:'bar',stack:'total',emphasis:{focus:'series'},data:data.vipTrain.map((v,i)=>(v/totals[i]*100).toFixed(2)),itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#ef4444'},{offset:1,color:'#dc2626'}])},barWidth:'55%',label:{show:false,position:'inside',formatter:'{c}%',fontSize:11,color:'#fff'}},
+                    {name:'VIP推理任务',type:'bar',stack:'total',emphasis:{focus:'series'},data:data.vipInfer.map((v,i)=>(v/totals[i]*100).toFixed(2)),itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#f97316'},{offset:1,color:'#ea580c'}])},label:{show:false,position:'inside',formatter:'{c}%',fontSize:11,color:'#fff'}},
+                    {name:'开发机',type:'bar',stack:'total',emphasis:{focus:'series'},data:data.devMachine.map((v,i)=>(v/totals[i]*100).toFixed(2)),itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#fb7185'},{offset:1,color:'#e11d48'}])},label:{show:false,position:'inside',formatter:'{c}%',fontSize:11,color:'#fff'}},
+                    {name:'普通训练任务',type:'bar',stack:'total',emphasis:{focus:'series'},data:data.normalTrain.map((v,i)=>(v/totals[i]*100).toFixed(2)),itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#fbbf24'},{offset:1,color:'#f59e0b'}])},label:{show:false,position:'inside',formatter:'{c}%',fontSize:11,color:'#fff'}},
+                    {name:'普通推理任务',type:'bar',stack:'total',emphasis:{focus:'series'},data:data.normalInfer.map((v,i)=>(v/totals[i]*100).toFixed(2)),itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#fde047'},{offset:1,color:'#eab308'}])},label:{show:false,position:'inside',formatter:'{c}%',fontSize:11,color:'#fff'}},
+                    {name:'闲时训练任务',type:'bar',stack:'total',emphasis:{focus:'series'},data:data.idleTrain.map((v,i)=>(v/totals[i]*100).toFixed(2)),itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#34d399'},{offset:1,color:'#10b981'}])},label:{show:false,position:'inside',formatter:'{c}%',fontSize:11,color:'#fff'}},
+                    {name:'闲时推理任务',type:'bar',stack:'total',emphasis:{focus:'series'},data:data.idleInfer.map((v,i)=>(v/totals[i]*100).toFixed(2)),itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#2dd4bf'},{offset:1,color:'#14b8a6'}])},label:{show:false,position:'inside',formatter:'{c}%',fontSize:11,color:'#fff'}},
+                    {name:'故障',type:'bar',stack:'total',emphasis:{focus:'series'},data:data.fault.map((v,i)=>(v/totals[i]*100).toFixed(2)),itemStyle:{color:'#6b7280'},label:{show:false,position:'inside',formatter:'{c}%',fontSize:11,color:'#fff'}},
+                    {name:'空闲',type:'bar',stack:'total',emphasis:{focus:'series'},data:data.idle.map((v,i)=>(v/totals[i]*100).toFixed(2)),itemStyle:{color:'#e5e7eb',borderRadius:[4,4,0,0]},label:{show:false,position:'top',formatter:'{c}%',color:'#9ca3af',fontSize:10}}
+                ],
+                animationDuration:600
+            };
+
+            chartInstance.on('legendselectchanged', p=>{
+                const sel = p.selected;
+                const cnt = Object.values(sel).filter(v=>v).length;
+                option.series.forEach(s=>s.label.show = cnt===1);
+                chartInstance.setOption({series:option.series});
+            });
+            chartInstance.on('mouseover', p=>{
+                if(p.componentType==='legend'){option.series.forEach(s=>s.label.show=true); chartInstance.setOption({series:option.series});}
+            });
+            chartInstance.on('mouseout', p=>{
+                if(p.componentType==='legend'){
+                    const sel = chartInstance.getOption().legend[0].selected;
+                    const cnt = Object.values(sel).filter(v=>v).length;
+                    option.series.forEach(s=>s.label.show = cnt===1);
+                    chartInstance.setOption({series:option.series});
+                }
+            });
+
+            chartInstance.setOption(option, true);
+        }
+
+        function switchResource(r){
+            currentResource = r;
+            document.querySelectorAll('.resource-tab').forEach(t=>t.classList.remove('active'));
+            document.getElementById(`tab-${r}`).classList.add('active');
+            updateChart(r);
+        }
+
+        initChart();
+    </script>
+</body>
+</html>
